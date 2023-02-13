@@ -89,6 +89,7 @@ class AppSearchAPIConnector implements APIConnector {
    */
 
   client: any;
+  searchKey: string | undefined;
   beforeSearchCall?: SearchQueryHook;
   beforeAutocompleteResultsCall?: SearchQueryHook;
   beforeAutocompleteSuggestionsCall?: SuggestionsQueryHook;
@@ -112,19 +113,43 @@ class AppSearchAPIConnector implements APIConnector {
       );
     }
 
-    this.client = ElasticAppSearch.createClient({
-      ...("endpointBase" in rest && { endpointBase: rest.endpointBase }), //Add property on condition
-      ...("hostIdentifier" in rest && { hostIdentifier: rest.hostIdentifier }),
-      apiKey: searchKey,
-      engineName: engineName,
-      cacheResponses: cacheResponses,
+    this.client = this.getClient({
+      searchKey,
+      engineName,
+      beforeSearchCall,
+      beforeAutocompleteResultsCall,
+      beforeAutocompleteSuggestionsCall,
+      cacheResponses,
       ...rest
-    });
+    })
     this.beforeSearchCall = beforeSearchCall;
     this.beforeAutocompleteResultsCall = beforeAutocompleteResultsCall;
     this.beforeAutocompleteSuggestionsCall = beforeAutocompleteSuggestionsCall;
   }
 
+  getClient({
+    searchKey,
+    engineName,
+    beforeSearchCall = (queryOptions, next) => next(queryOptions),
+    beforeAutocompleteResultsCall = (queryOptions, next) => next(queryOptions),
+    beforeAutocompleteSuggestionsCall = (queryOptions, next) =>
+      next(queryOptions),
+    cacheResponses = true,
+    ...rest
+  }: AppSearchAPIConnectorParams) {
+    if (searchKey !== this.searchKey || this.searchKey === undefined) {
+      this.searchKey = searchKey;
+      return ElasticAppSearch.createClient({
+        ...("endpointBase" in rest && { endpointBase: rest.endpointBase }), //Add property on condition
+        ...("hostIdentifier" in rest && { hostIdentifier: rest.hostIdentifier }),
+        apiKey: searchKey,
+        engineName: engineName,
+        cacheResponses: cacheResponses,
+        ...rest
+      });
+    }
+    return this.client;
+  }
   onResultClick({
     query,
     documentId,
