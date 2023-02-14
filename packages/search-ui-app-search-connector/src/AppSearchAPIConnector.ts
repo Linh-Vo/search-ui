@@ -89,7 +89,7 @@ class AppSearchAPIConnector implements APIConnector {
    */
 
   client: any;
-  searchKey: string | undefined;
+  clientConfigs: any;
   beforeSearchCall?: SearchQueryHook;
   beforeAutocompleteResultsCall?: SearchQueryHook;
   beforeAutocompleteSuggestionsCall?: SuggestionsQueryHook;
@@ -112,43 +112,33 @@ class AppSearchAPIConnector implements APIConnector {
         "hostIdentifier or endpointBase, and engineName are required"
       );
     }
-
-    this.client = this.getClient({
+    localStorage.setItem("searchKey", searchKey);
+    this.clientConfigs = {
       searchKey,
       engineName,
-      beforeSearchCall,
-      beforeAutocompleteResultsCall,
-      beforeAutocompleteSuggestionsCall,
       cacheResponses,
+      ...("endpointBase" in rest && { endpointBase: rest.endpointBase }), //Add property on condition
+      ...("hostIdentifier" in rest && { hostIdentifier: rest.hostIdentifier }),
       ...rest
-    })
+    };
+    this.client = ElasticAppSearch.createClient(this.clientConfigs);
     this.beforeSearchCall = beforeSearchCall;
     this.beforeAutocompleteResultsCall = beforeAutocompleteResultsCall;
     this.beforeAutocompleteSuggestionsCall = beforeAutocompleteSuggestionsCall;
   }
 
-  getClient({
-    searchKey,
-    engineName,
-    beforeSearchCall = (queryOptions, next) => next(queryOptions),
-    beforeAutocompleteResultsCall = (queryOptions, next) => next(queryOptions),
-    beforeAutocompleteSuggestionsCall = (queryOptions, next) =>
-      next(queryOptions),
-    cacheResponses = true,
-    ...rest
-  }: AppSearchAPIConnectorParams) {
-    if (searchKey !== this.searchKey || this.searchKey === undefined) {
-      this.searchKey = searchKey;
-      return ElasticAppSearch.createClient({
-        ...("endpointBase" in rest && { endpointBase: rest.endpointBase }), //Add property on condition
-        ...("hostIdentifier" in rest && { hostIdentifier: rest.hostIdentifier }),
-        apiKey: searchKey,
-        engineName: engineName,
-        cacheResponses: cacheResponses,
-        ...rest
-      });
-    }
-    return this.client;
+  getClient() {
+    const searchKey: string | null = localStorage.getItem("searchKey");
+    // if (
+    //   searchKey !== this.clientConfigs.searchKey ||
+    //   this.clientConfigs.searchKey === undefined
+    // ) {
+    //   this.clientConfigs = { ...this.clientConfigs, searchKey: searchKey };
+    //   return ElasticAppSearch.createClient(this.clientConfigs);
+    // }
+    // return this.client;
+    this.clientConfigs = { ...this.clientConfigs, searchKey: searchKey };
+    return ElasticAppSearch.createClient(this.clientConfigs);
   }
   onResultClick({
     query,
@@ -157,7 +147,7 @@ class AppSearchAPIConnector implements APIConnector {
     tags = []
   }: ResultClickParams): void {
     tags = tags.concat("results");
-    return this.client.click({ query, documentId, requestId, tags });
+    return this.getClient().click({ query, documentId, requestId, tags });
   }
 
   onAutocompleteResultClick({
@@ -167,7 +157,7 @@ class AppSearchAPIConnector implements APIConnector {
     tags = []
   }: ResultClickParams): void {
     tags = tags.concat("autocomplete");
-    return this.client.click({ query, documentId, requestId, tags });
+    return this.getClient().click({ query, documentId, requestId, tags });
   }
 
   async onSearch(
@@ -201,7 +191,7 @@ class AppSearchAPIConnector implements APIConnector {
     };
 
     return this.beforeSearchCall(options, async (newOptions) => {
-      const response = await this.client.search(query, newOptions);
+      const response = await this.getClient().search(query, newOptions);
       return adaptResponse(response, buildResponseAdapterOptions(queryConfig));
     });
   }
@@ -241,7 +231,7 @@ class AppSearchAPIConnector implements APIConnector {
       const options = removeEmptyFacetsAndFilters(withQueryConfigOptions);
       promises.push(
         this.beforeAutocompleteResultsCall(options, (newOptions) => {
-          return this.client
+          return this.getClient()
             .search(query, {
               ...newOptions,
               record_analytics: false
@@ -261,7 +251,7 @@ class AppSearchAPIConnector implements APIConnector {
 
       promises.push(
         this.beforeAutocompleteSuggestionsCall(options, (newOptions) =>
-          this.client
+          this.getClient()
             .querySuggestion(searchTerm, newOptions)
             .then((response) => {
               autocompletedState.autocompletedSuggestions = response.results;
